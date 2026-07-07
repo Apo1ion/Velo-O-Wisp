@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velo-O-Wisp</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page" aria-label="Velo-O-Wisp">
+    <header class="hero-header">
+      <img class="wisp-logo" src="assets/wisp.png" alt="Velo-O-Wisp" />
+      <img class="main-logo" src="assets/logo.png" alt="VELO-O-WISP" />
+      <img class="tagline" src="assets/tagline.png" alt="Блуждающий огонек твоей парковки" />
+    </header>
+
+    <nav class="action-row" aria-label="Основные действия">
+      <button class="image-button upload-button" type="button" aria-label="Загрузить фото">
+        <img src="assets/btn-upload.png" alt="Загрузить фото" />
+      </button>
+      <button class="image-button analyze-button" type="button" aria-label="Запустить анализ">
+        <img src="assets/btn-analyze.png" alt="Запустить анализ" />
+      </button>
+      <button class="image-button history-button" type="button" aria-label="История">
+        <img src="assets/btn-history.png" alt="История" />
+      </button>
+      <button class="image-button export-button" type="button" aria-label="Экспорт">
+        <img src="assets/btn-export.png" alt="Экспорт" />
+      </button>
+    </nav>
+
+    <section class="content-grid" aria-label="Описание проекта">
+      <img class="about-card" src="assets/about-card.png" alt="О проекте. Учет велосипедов на парковке. Velo-O-Wisp использует современные нейросетевые модели и систему компьютерного зрения, что позволяет ему автоматически обнаруживать велосипеды на изображении и вести их точный количественный подсчет без участия оператора." />
+      <img class="hero-image" src="assets/hero-image.png" alt="Висп рядом с велосипедом" />
+    </section>
+  </main>
+
+  <input class="file-input" id="photoInput" type="file" accept="image/png,image/jpeg,image/jpg" />
+
+  <div class="result-popup" id="resultPopup" aria-hidden="true">
+    <div class="result-stage">
+      <img class="result-title" src="assets/result-title.png" alt="Результат" />
+      <button class="result-close" id="resultClose" type="button" aria-label="Закрыть результат">
+        <img src="assets/back-button.png" alt="Закрыть" />
+      </button>
+
+      <div class="result-image-slot result-original">
+        <img id="originalPreview" src="assets/unmarked-placeholder.png" alt="Исходное изображение" />
+      </div>
+      <div class="result-image-slot result-processed">
+        <img id="processedPreview" src="assets/marked-placeholder.png" alt="Обработанное изображение" />
+      </div>
+
+      <img class="result-wisp" src="assets/wisp-result.png" alt="" />
+
+      <div class="result-count-wrap">
+        <img class="result-count-bg" src="assets/count-bg.png" alt="" />
+        <div class="result-count-text">
+          <div>На данной фотографии количество велотранспорта</div>
+          <strong id="resultCount">4</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="history-popup" id="historyPopup" aria-hidden="true">
+    <div class="history-stage">
+      <img class="history-title-img" src="assets/history-title.png" alt="История" />
+      <button class="history-close" id="historyClose" type="button" aria-label="Закрыть историю">
+        <img src="assets/back-button.png" alt="Закрыть" />
+      </button>
+
+      <div class="history-list" id="historyList"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://txcqbnueitrdxcgixidl.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_D2Hn3O884P0UTO7J9XNzfQ_WgEe96wV";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const uploadButton = document.querySelector('.upload-button');
+    const analyzeButton = document.querySelector('.analyze-button');
+    const historyButton = document.querySelector('.history-button');
+    const exportButton = document.querySelector('.export-button');
+    const photoInput = document.getElementById('photoInput');
+    const resultPopup = document.getElementById('resultPopup');
+    const historyPopup = document.getElementById('historyPopup');
+    const historyClose = document.getElementById('historyClose');
+    const resultClose = document.getElementById('resultClose');
+    const originalPreview = document.getElementById('originalPreview');
+    const processedPreview = document.getElementById('processedPreview');
+    const resultCount = document.getElementById('resultCount');
+    const historyList = document.getElementById('historyList');
+
+    let selectedFile = null;
+    let lastHistoryRows = [];
+
+    function formatDate(value){
+      if(!value) return '';
+      const date = new Date(value);
+      if(Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString('ru-RU');
+    }
+
+    function checkSupabase(){
+      if(db) return true;
+      alert('Supabase не подключен. Проверьте SUPABASE_URL и SUPABASE_KEY в index.html');
+      return false;
+    }
+
+    function openResult(){
+      resultPopup.classList.add('is-open');
+      resultPopup.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeResult(){
+      resultPopup.classList.remove('is-open');
+      resultPopup.setAttribute('aria-hidden', 'true');
+    }
+
+    function openHistory(){
+      historyPopup.classList.add('is-open');
+      historyPopup.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeHistory(){
+      historyPopup.classList.remove('is-open');
+      historyPopup.setAttribute('aria-hidden', 'true');
+    }
+
+    function renderHistory(rows){
+      historyList.innerHTML = '';
+
+      if(!rows || rows.length === 0){
+        return;
+      }
+
+      const header = document.createElement('div');
+      header.className = 'history-row history-header-row';
+      header.innerHTML = `
+        <img src="assets/history-row.png" alt="" />
+        <span class="history-cell history-file">Название файла</span>
+        <span class="history-cell history-date">Дата загрузки</span>
+        <span class="history-cell history-analysis">Анализ</span>
+      `;
+      historyList.appendChild(header);
+
+      rows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'history-row';
+        item.innerHTML = `
+          <img src="assets/history-row.png" alt="" />
+          <span class="history-cell history-file"></span>
+          <span class="history-cell history-date"></span>
+          <span class="history-cell history-analysis"></span>
+        `;
+        item.querySelector('.history-file').textContent = row.file_name || row.original_filename || 'Файл';
+        item.querySelector('.history-date').textContent = formatDate(row.upload_date || row.timestamp);
+        const count = row.bicycle_count ?? row.count ?? 0;
+        item.querySelector('.history-analysis').textContent = `Анализ: ${count} велосипедов`;
+        historyList.appendChild(item);
+      });
+    }
+
+    async function loadHistory(){
+      if(!checkSupabase()) return;
+      const { data, error } = await db
+        .from('history')
+        .select('*')
+        .order('id', { ascending:false });
+
+      if(error){
+        console.error(error);
+        alert('Ошибка загрузки истории из Supabase: ' + error.message);
+        return;
+      }
+
+      lastHistoryRows = data || [];
+      renderHistory(lastHistoryRows);
+    }
+
+    async function saveHistory(fileName, count, processingTime = 0, resultImage = '', originalImage = ''){
+      if(!checkSupabase()) return;
+      const payload = {
+        file_name: fileName,
+        bicycle_count: count,
+        processing_time: processingTime,
+        result_image: resultImage,
+        original_image: originalImage
+      };
+      const { error } = await db.from('history').insert([payload]);
+      if(error){
+        console.error(error);
+        alert('Ошибка сохранения истории в Supabase: ' + error.message);
+      }
+    }
+
+    uploadButton.addEventListener('click', () => photoInput.click());
+
+    photoInput.addEventListener('change', () => {
+      const file = photoInput.files && photoInput.files[0];
+      if (!file) return;
+      selectedFile = file;
+      const url = URL.createObjectURL(file);
+      originalPreview.src = url;
+      processedPreview.src = url;
+    });
+
+    analyzeButton.addEventListener('click', async () => {
+      if(!selectedFile){
+        alert('Сначала загрузите фото.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      try{
+        analyzeButton.disabled = true;
+        const response = await fetch('/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        if(!response.ok){
+          const errText = await response.text();
+          throw new Error(errText || 'Ошибка анализа изображения');
+        }
+
+        const data = await response.json();
+        const cacheBust = '?v=' + Date.now();
+        originalPreview.src = data.original_image + cacheBust;
+        processedPreview.src = data.result_image + cacheBust;
+        resultCount.textContent = data.count;
+
+        await saveHistory(
+          selectedFile.name,
+          data.count,
+          data.processing_time || 0,
+          data.result_image || '',
+          data.original_image || ''
+        );
+
+        openResult();
+      }catch(error){
+        console.error(error);
+        alert('Ошибка анализа: ' + error.message);
+      }finally{
+        analyzeButton.disabled = false;
+      }
+    });
+
+    resultClose.addEventListener('click', closeResult);
+
+    historyButton.addEventListener('click', async () => {
+      openHistory();
+      await loadHistory();
+    });
+
+    historyClose.addEventListener('click', closeHistory);
+
+    exportButton.addEventListener('click', async () => {
+      if(!db){
+        if(!checkSupabase()) return;
+      }
+      await loadHistory();
+      const rows = lastHistoryRows || [];
+      const csvRows = [['Название файла','Дата загрузки','Анализ']];
+      rows.forEach(row => {
+        const count = row.bicycle_count ?? row.count ?? 0;
+        csvRows.push([
+          row.file_name || row.original_filename || 'Файл',
+          formatDate(row.upload_date || row.timestamp),
+          `Анализ: ${count} велосипедов`
+        ]);
+      });
+      const csv = csvRows.map(row => row.map(value => '"' + String(value).replaceAll('"','""') + '"').join(';')).join('\n');
+      const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'history.csv';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  </script>
+
+</body>
+</html>
